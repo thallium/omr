@@ -117,6 +117,11 @@ or omrthread priority value.
 
 #define omrthread_monitor_init(pMon,flags)  omrthread_monitor_init_with_name(pMon,flags, #pMon)
 
+typedef struct omrthread_thread_time_t {
+	int64_t userTime;
+	int64_t sysTime;
+} omrthread_thread_time_t;
+
 #ifdef __cplusplus
 }
 #endif

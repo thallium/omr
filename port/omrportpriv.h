@@ -1110,4 +1110,8 @@ extern J9_CFUNC int32_t
 omrcuda_streamWaitEvent(struct OMRPortLibrary *portLibrary, uint32_t deviceId, J9CudaStream stream, J9CudaEvent event);
 #endif /* OMR_OPT_CUDA */
 
+/* omrthread */
+extern J9_CFUNC int32_t
+omrthread_get_self_thread_time(struct OMRPortLibrary *portLibrary, struct omrthread_thread_time_t *thread_time);
+
 #endif /* omrportlibraryprivatedefines_h */

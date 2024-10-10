@@ -209,6 +209,8 @@ ifeq (1,$(OMR_OPT_CUDA))
   OBJECTS += omrcuda
 endif
 
+OBJECTS += omrthread
+
 # Append OBJEXT to the complete list of OBJECTS
 # except for .res files for windows
 OBJECTS := $(sort $(addsuffix $(OBJEXT),$(filter-out %.res,$(OBJECTS))) $(filter %.res,$(OBJECTS)))

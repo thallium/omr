@@ -183,6 +183,7 @@ list(APPEND OBJECTS
 	omrsignal.c
 	omrsock.c
 	omrsockptb.c
+	omrthread.c
 )
 
 if(NOT OMR_OS_WINDOWS)

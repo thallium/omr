@@ -2757,6 +2757,8 @@ typedef struct OMRPortLibrary {
 	/** see @ref omrcuda.cpp::omrcuda_streamWaitEvent "omrcuda_streamWaitEvent" */
 	int32_t (*cuda_streamWaitEvent)(struct OMRPortLibrary *portLibrary, uint32_t deviceId, J9CudaStream stream, J9CudaEvent event);
 #endif /* OMR_OPT_CUDA */
+	/** see @ref omrthread.c::omrthread_get_self_thread_time "omrthread_get_self_thread_time" */
+int32_t (*omrthread_get_self_thread_time)(struct OMRPortLibrary *portLibrary, struct omrthread_thread_time_t *thread_time);
 } OMRPortLibrary;
 
 /**
@@ -3338,6 +3340,8 @@ extern J9_CFUNC int32_t omrport_getVersion(struct OMRPortLibrary *portLibrary);
 #define omrcuda_streamWaitEvent(deviceId, stream, event) \
 				privateOmrPortLibrary->cuda_streamWaitEvent(privateOmrPortLibrary, (deviceId), (stream), (event))
 #endif /* OMR_OPT_CUDA */
+
+#define omrthread_get_self_thread_time(threadTime) privateOmrPortLibrary->omrthread_get_self_thread_time(privateOmrPortLibrary, (threadTime))
 
 #endif /* !defined(OMRPORT_LIBRARY_DEFINE) */
 
