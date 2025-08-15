@@ -151,6 +151,11 @@ typedef struct J9ThreadLibrary {
 #if defined(OSX)
 	clock_serv_t clockService;
 #endif /* defined(OSX) */
+	uintptr_t parkPolicy;
+	uintptr_t parkSleepMultiplier;
+	uintptr_t parkSleepTime;
+	uintptr_t parkSpinCount;
+	uintptr_t parkSleepCount;
 } J9ThreadLibrary;
 
 /*

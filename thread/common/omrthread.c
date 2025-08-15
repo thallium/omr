@@ -3288,6 +3288,7 @@ omrthread_park(int64_t millis, intptr_t nanos)
 		rc = J9THREAD_PRIORITY_INTERRUPTED;
 	} else {
 		self->flags |= J9THREAD_FLAGM_PARKED_INTERRUPTIBLE;
+		uintptr_t parkPolicy = **(uintptr_t **)omrthread_global((char *)"parkPolicy");
 
 		if (millis || nanos) {
 			intptr_t boundedMillis = BOUNDED_I64_TO_IDATA(millis);
@@ -3309,6 +3310,39 @@ omrthread_park(int64_t millis, intptr_t nanos)
 			}
 			OMROSCOND_WAIT_TIMED_LOOP();
 		} else {
+			if (1 == parkPolicy) {
+				uintptr_t parkSpinCount = **(uintptr_t **)omrthread_global((char *)"parkSpinCount");
+				for (uintptr_t count = 0; count < parkSpinCount; ++count) {
+					if (self->flags & J9THREAD_FLAG_UNPARKED) {
+						self->flags &= ~J9THREAD_FLAG_UNPARKED;
+						break;
+					} else if (self->flags & J9THREAD_FLAG_INTERRUPTED) {
+						rc = J9THREAD_INTERRUPTED;
+						break;
+					} else if (self->flags & (J9THREAD_FLAG_PRIORITY_INTERRUPTED | J9THREAD_FLAG_ABORTED)) {
+						rc = J9THREAD_PRIORITY_INTERRUPTED;
+						break;
+					}
+				}
+			} else if (2 == parkPolicy) {
+				uintptr_t parkSleepCount = **(uintptr_t **)omrthread_global((char *)"parkSleepCount");
+				uintptr_t parkSleepTime = **(uintptr_t **)omrthread_global((char *)"parkSleepTime");
+				uintptr_t parkSleepMultiplier = **(uintptr_t **)omrthread_global((char *)"parkSleepMultiplier");
+				for (intptr_t count = (intptr_t)parkSleepCount; count > 0; --count) {
+					omrthread_sleep(((count * parkSleepMultiplier) + 1) * parkSleepTime);
+					if (self->flags & J9THREAD_FLAG_UNPARKED) {
+						self->flags &= ~J9THREAD_FLAG_UNPARKED;
+						break;
+					} else if (self->flags & J9THREAD_FLAG_INTERRUPTED) {
+						rc = J9THREAD_INTERRUPTED;
+						break;
+					} else if (self->flags & (J9THREAD_FLAG_PRIORITY_INTERRUPTED | J9THREAD_FLAG_ABORTED)) {
+						rc = J9THREAD_PRIORITY_INTERRUPTED;
+						break;
+					}
+				}
+			}
+
 			OMROSCOND_WAIT(self->condition, self->mutex);
 				if (self->flags & J9THREAD_FLAG_UNPARKED) {
 					self->flags &= ~J9THREAD_FLAG_UNPARKED;
