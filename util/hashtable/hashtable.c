@@ -523,6 +523,7 @@ hashTableFindNodeInTree(J9HashTable *table, void *entry, void **head)
 void *
 hashTableAdd(J9HashTable *table, void *entry)
 {
+	Trc_hashTable_add(table, "hashTableAdd");
 	uintptr_t hashCode = table->hashFn(entry, table->hashFnUserData);
 	void **head = &table->nodes[hashCode % table->tableSize];
 	void *addNode = NULL;
@@ -563,9 +564,11 @@ done:
 static void *
 hashTableAddNodeSpaceOpt(J9HashTable *table, void *entry, void **head)
 {
+	Trc_hashTable_add(table, "enter");
 	void **where = hashTableFindNodeSpaceOpt(table, entry, head, NULL);
 	if (NULL == *where) {
 		*(uintptr_t *)where = *(uintptr_t *)entry;
+		Trc_hashTable_add(where, "write");
 		table->numberOfNodes += 1;
 	}
 	return where;
@@ -574,6 +577,7 @@ hashTableAddNodeSpaceOpt(J9HashTable *table, void *entry, void **head)
 static void *
 hashTableAddNodeInList(J9HashTable *table, void *entry, void **head)
 {
+	Trc_hashTable_add(table, "enter");
 	void **where = head;
 	uintptr_t listLength = 0;
 	void *newNode = NULL;
@@ -585,6 +589,7 @@ hashTableAddNodeInList(J9HashTable *table, void *entry, void **head)
 	}
 
 	if (NULL != *where) {
+		Trc_hashTable_add(table, "found node");
 		/* found the entry in the table*/
 		newNode = *where;
 	} else {
@@ -592,6 +597,7 @@ hashTableAddNodeInList(J9HashTable *table, void *entry, void **head)
 		 * the node as a list if a tree could not be allocated
 		 */
 		if ((listLength > table->listToTreeThreshold) && (0 == listToTree(table, head, listLength))) {
+			Trc_hashTable_add(table, "converted to tree");
 			newNode = hashTableAddNodeInTree(table, entry, head);
 
 			/* After creating the tree, whether we succeeded to add the node or not,
@@ -607,6 +613,7 @@ hashTableAddNodeInList(J9HashTable *table, void *entry, void **head)
 				}
 				*where = newNode;
 				table->numberOfNodes += 1;
+				Trc_hashTable_add(table, "added to list");
 			}
 		}
 	}
