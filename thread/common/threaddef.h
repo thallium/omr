@@ -98,7 +98,30 @@ intptr_t omrthread_spinlock_acquire(omrthread_t self, omrthread_monitor_t monito
 intptr_t omrthread_spinlock_acquire_no_spin(omrthread_t self, omrthread_monitor_t monitor);
 uintptr_t omrthread_spinlock_swapState(omrthread_monitor_t monitor, uintptr_t newState);
 intptr_t omrthread_park_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t *sleepedDuration);
-intptr_t omrthread_park_check_flags(omrthread_t thread);
+/**
+ * Check the current state of the thread flag. The return value is used
+ * by omrthread_park and omrthread_park_spin.
+ * @param[in] thread the current omrthread_t
+ *
+ * @return 0 if no checked bit is set
+ * J9THREAD_INTERRUPTED if the thread was interrupted while parked<br>
+ * J9THREAD_PRIORITY_INTERRUPTED if the thread was priority interrupted or aborted while parked<br>
+ * J9THREAD_UNPARKED if the thread has been unparked. Note: this return value is only for internal
+ * use and should not be returned by omrthread_park
+ */
+VMINLINE intptr_t
+omrthread_park_check_flags(omrthread_t thread)
+{
+	intptr_t rc = 0;
+	if (OMR_ARE_ANY_BITS_SET(thread->flags, J9THREAD_FLAG_UNPARKED)) {
+		rc = J9THREAD_UNPARKED;
+	} else if (OMR_ARE_ANY_BITS_SET(thread->flags, J9THREAD_FLAG_INTERRUPTED)) {
+		rc = J9THREAD_INTERRUPTED;
+	} else if (OMR_ARE_ANY_BITS_SET(thread->flags, (J9THREAD_FLAG_PRIORITY_INTERRUPTED | J9THREAD_FLAG_ABORTED))) {
+		rc = J9THREAD_PRIORITY_INTERRUPTED;
+	}
+	return rc;
+}
 
 #if defined(OMR_THR_MCS_LOCKS)
 intptr_t

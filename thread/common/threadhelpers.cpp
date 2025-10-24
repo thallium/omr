@@ -483,30 +483,6 @@ omrthread_mcs_node_free(omrthread_t self, omrthread_mcs_node_t mcsNode)
 
 #endif /* OMR_THR_THREE_TIER_LOCKING */
 
-/**
- * Check the current state of the thread flag. The return value is used
- * by omrthread_park and omrthread_park_spin.
- * @param[in] thread the current omrthread_t
- *
- * @return 0 if no checked bit is set
- * J9THREAD_INTERRUPTED if the thread was interrupted while parked<br>
- * J9THREAD_PRIORITY_INTERRUPTED if the thread was priority interrupted or aborted while parked<br>
- * J9THREAD_UNPARKED if the thread has been unparked. Note: this return value is only for internal
- * use and should not be returned by omrthread_park
- */
-intptr_t
-omrthread_park_check_flags(omrthread_t thread)
-{
-	intptr_t rc = 0;
-	if (OMR_ARE_ANY_BITS_SET(thread->flags, J9THREAD_FLAG_UNPARKED)) {
-		rc = J9THREAD_UNPARKED;
-	} else if (OMR_ARE_ANY_BITS_SET(thread->flags, J9THREAD_FLAG_INTERRUPTED)) {
-		rc = J9THREAD_INTERRUPTED;
-	} else if (OMR_ARE_ANY_BITS_SET(thread->flags, (J9THREAD_FLAG_PRIORITY_INTERRUPTED | J9THREAD_FLAG_ABORTED))) {
-		rc = J9THREAD_PRIORITY_INTERRUPTED;
-	}
-	return rc;
-}
 
 #if defined(OMR_THR_YIELD_ALG)
 /**
@@ -532,13 +508,13 @@ omrthread_park_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 	omrthread_library_t lib = self->library;
 	intptr_t rc = 0;
 	uintptr_t parkPolicy = lib->parkPolicy;
-	intptr_t totalSleepTime = 0;
 
 	if ((OMRTHREAD_PARK_POLICY_NONE != parkPolicy)) {
 		uintptr_t count = 0;
 		uintptr_t parkSleepTime = lib->parkSleepTime;
 		uintptr_t parkSleepMultiplier = lib->parkSleepMultiplier;
 		uintptr_t timeout = (millis * 1000) + (nanos / 1000);
+		intptr_t totalSleepTime = 0;
 
 		if (OMRTHREAD_PARK_POLICY_SPIN == parkPolicy) {
 			/* For now, spin is only supported if no timeout is specified. */
@@ -567,9 +543,9 @@ omrthread_park_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 				break;
 			}
 		}
-	}
-	if (NULL != sleptDuration) {
-		*sleptDuration = totalSleepTime;
+		if (NULL != sleptDuration) {
+			*sleptDuration = totalSleepTime;
+		}
 	}
 	return rc;
 }
