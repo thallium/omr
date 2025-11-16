@@ -92,7 +92,6 @@ static intptr_t interrupt_waiting_thread(omrthread_t self, omrthread_t threadToI
 static void interrupt_blocked_thread(omrthread_t self, omrthread_t threadToInterrupt);
 #endif /* OMR_THR_THREE_TIER_LOCKING */
 
-static intptr_t check_notified(omrthread_t self, omrthread_monitor_t monitor);
 static uintptr_t monitor_maximum_wait_number(omrthread_monitor_t monitor);
 static uintptr_t monitor_on_notify_all_wait_list(omrthread_t self, omrthread_monitor_t monitor);
 static void monitor_notify_all_migration(omrthread_monitor_t monitor);
@@ -688,7 +687,37 @@ init_spinParameters(omrthread_library_t lib)
 	if (init_threadParam("parkSleepCpuUtilThreshold", &lib->parkSleepCpuUtilThreshold)) {
 		return -1;
 	}
-#endif /* defined(OMR_THR_YIELD_ALG) */
+
+	lib->waitPolicy = 0;
+	if (init_threadParam("waitPolicy", &lib->waitPolicy)) {
+		return -1;
+	}
+
+	lib->waitSleepMultiplier = 0;
+	if (init_threadParam("waitSleepMultiplier", &lib->waitSleepMultiplier)) {
+		return -1;
+	}
+
+	lib->waitSleepTime = 0;
+	if (init_threadParam("waitSleepTime", &lib->waitSleepTime)) {
+		return -1;
+	}
+
+	lib->waitSpinCount = 0;
+	if (init_threadParam("waitSpinCount", &lib->waitSpinCount)) {
+		return -1;
+	}
+
+	lib->waitSleepCount = 0;
+	if (init_threadParam("waitSleepCount", &lib->waitSleepCount)) {
+		return -1;
+	}
+
+	lib->waitSleepCpuUtilThreshold = 80;
+	if (init_threadParam("waitSleepCpuUtilThreshold", &lib->waitSleepCpuUtilThreshold)) {
+		return -1;
+	}
+#endif
 
 #if defined(OMR_THR_THREE_TIER_LOCKING)
 #if defined(OMR_THR_SPIN_WAKE_CONTROL)
@@ -4604,6 +4633,10 @@ monitor_wait_original(omrthread_t self, omrthread_monitor_t monitor,
 #if defined(OMR_THR_MCS_LOCKS)
 	omrthread_t nextThread = NULL;
 #endif /* defined(OMR_THR_MCS_LOCKS) */
+#if defined(OMR_THR_YIELD_ALG)
+	uintptr_t sleptDuration = 0;
+	intptr_t spinRC = 0;
+#endif /* defined(OMR_THR_YIELD_ALG) */
 
 	ASSERT(monitor);
 	ASSERT(FREE_TAG != monitor->count);
@@ -4697,60 +4730,88 @@ monitor_wait_original(omrthread_t self, omrthread_monitor_t monitor,
 	self->waitNumber = monitor_maximum_wait_number(monitor) + 1;
 	threadEnqueue(&monitor->waiting, self);
 
-	if (millis || nanos) {
-		/*
-		 * TIMED WAIT
-		 */
-		intptr_t boundedMillis = BOUNDED_I64_TO_IDATA(millis);
-
-		ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
-		OMROSCOND_WAIT_IF_TIMEDOUT(MONITOR_WAIT_CONDITION(self, monitor), monitor->mutex, boundedMillis, nanos) {
-			ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
-
-			THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
-			intrFlags = self->flags & intrMask;
-			interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
-			priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
-			notified = check_notified(self, monitor);
-			if (!(interrupted || priorityinterrupted || notified)) {
-				timedOut = 1;
-				self->flags |= J9THREAD_FLAG_BLOCKED;
+#if defined(OMR_THR_YIELD_ALG)
+	if (self->library->cpuUtilCache >= self->library->waitSleepCpuUtilThreshold) {
+		spinRC = omrthread_wait_spin(self, millis, nanos, intrMask, monitor, &sleptDuration);
+	}
+	if (J9THREAD_NOTIFIED == spinRC) {
+		notified = TRUE;
+	} else if (J9THREAD_TIMED_OUT == spinRC) {
+		timedOut = 1;
+		self->flags |= J9THREAD_FLAG_BLOCKED;
+	} else if (J9THREAD_INTERRUPTED == spinRC) {
+		interrupted = 1;
+	} else if (J9THREAD_PRIORITY_INTERRUPTED == spinRC) {
+		priorityinterrupted = 1;
+	} else
+#endif /* defined(OMR_THR_YIELD_ALG) */
+	{
+		if (millis || nanos) {
+			/*
+			* TIMED WAIT
+			*/
+			intptr_t boundedMillis = BOUNDED_I64_TO_IDATA(millis);
+#if defined(OMR_THR_YIELD_ALG)
+			ldiv_t sleptMillis = ldiv(sleptDuration, 1000);
+			int64_t sleptNanos = sleptMillis.rem * 1000;
+			if (sleptNanos > nanos) {
+				nanos = nanos + 1000000 - sleptNanos;
+				boundedMillis = boundedMillis - 1 - sleptMillis.quot;
+			} else {
+				nanos -= sleptNanos;
+				boundedMillis -= sleptMillis.quot;
 			}
-			break;
+#endif /* defined(OMR_THR_YIELD_ALG) */
+
+			ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
+			OMROSCOND_WAIT_IF_TIMEDOUT(MONITOR_WAIT_CONDITION(self, monitor), monitor->mutex, boundedMillis, nanos) {
+				ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
+
+				THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
+				intrFlags = self->flags & intrMask;
+				interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
+				priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
+				notified = check_notified(self, monitor);
+				if (!(interrupted || priorityinterrupted || notified)) {
+					timedOut = 1;
+					self->flags |= J9THREAD_FLAG_BLOCKED;
+				}
+				break;
+			} else {
+				ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
+
+				THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
+				intrFlags = self->flags & intrMask;
+				interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
+				priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
+				notified = check_notified(self, monitor);
+				if (interrupted || priorityinterrupted || notified) {
+					break;
+				}
+				THREAD_UNLOCK(self);
+			}
+			OMROSCOND_WAIT_TIMED_LOOP();
+
 		} else {
-			ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
+			/*
+			* WAIT UNTIL NOTIFIED, NO TIMEOUT
+			*/
 
-			THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
-			intrFlags = self->flags & intrMask;
-			interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
-			priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
-			notified = check_notified(self, monitor);
-			if (interrupted || priorityinterrupted || notified) {
-				break;
-			}
-			THREAD_UNLOCK(self);
+			ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
+			OMROSCOND_WAIT(MONITOR_WAIT_CONDITION(self,monitor), monitor->mutex);
+				ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
+
+				THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
+				intrFlags = self->flags & intrMask;
+				interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
+				priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
+				notified = check_notified(self, monitor);
+				if (interrupted || priorityinterrupted || notified) {
+					break;
+				}
+				THREAD_UNLOCK(self);
+			OMROSCOND_WAIT_LOOP();
 		}
-		OMROSCOND_WAIT_TIMED_LOOP();
-
-	} else {
-		/*
-		 * WAIT UNTIL NOTIFIED, NO TIMEOUT
-		 */
-
-		ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
-		OMROSCOND_WAIT(MONITOR_WAIT_CONDITION(self,monitor), monitor->mutex);
-			ASSERT_MONITOR_UNOWNED_IF_NOT_3TIER(monitor);
-
-			THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
-			intrFlags = self->flags & intrMask;
-			interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
-			priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
-			notified = check_notified(self, monitor);
-			if (interrupted || priorityinterrupted || notified) {
-				break;
-			}
-			THREAD_UNLOCK(self);
-		OMROSCOND_WAIT_LOOP();
 	}
 
 	/* DONE WAITING AT THIS POINT */
@@ -4873,6 +4934,11 @@ monitor_wait_three_tier(omrthread_t self, omrthread_monitor_t monitor,
 #if defined(OMR_THR_MCS_LOCKS)
 	omrthread_t nextThread = NULL;
 #endif /* defined(OMR_THR_MCS_LOCKS) */
+#if defined(OMR_THR_YIELD_ALG)
+	omrthread_library_t threadLibrary = self->library;
+	uintptr_t sleptDuration = 0;
+	intptr_t spinRC = 0;
+#endif /* defined(OMR_THR_YIELD_ALG) */
 
 	ASSERT(monitor);
 	ASSERT(FREE_TAG != monitor->count);
@@ -4971,53 +5037,81 @@ monitor_wait_three_tier(omrthread_t self, omrthread_monitor_t monitor,
 
 	threadEnqueue(&monitor->waiting, self);
 
-	if (millis || nanos) {
-		/*
-		 * TIMED WAIT
-		 */
-		intptr_t boundedMillis = BOUNDED_I64_TO_IDATA(millis);
-
-		OMROSCOND_WAIT_IF_TIMEDOUT(self->condition, monitor->mutex, boundedMillis, nanos) {
-			THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
-			intrFlags = self->flags & intrMask;
-			interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
-			priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
-			notified = self->flags & J9THREAD_FLAG_NOTIFIED;
-			if (!(interrupted || priorityinterrupted || notified)) {
-				timedOut = 1;
-				self->flags |= J9THREAD_FLAG_BLOCKED;
+#if defined(OMR_THR_YIELD_ALG)
+	if (threadLibrary->cpuUtilCache >= threadLibrary->waitSleepCpuUtilThreshold) {
+		spinRC = omrthread_wait_spin(self, millis, nanos, intrMask, monitor, &sleptDuration);
+	}
+	if (J9THREAD_NOTIFIED == spinRC) {
+		notified = 1;
+	} else if (J9THREAD_TIMED_OUT == spinRC) {
+		timedOut = 1;
+		self->flags |= J9THREAD_FLAG_BLOCKED;
+	} else if (J9THREAD_INTERRUPTED == spinRC) {
+		interrupted = 1;
+	} else if (J9THREAD_PRIORITY_INTERRUPTED == spinRC) {
+		priorityinterrupted = 1;
+	} else
+#endif /* defined(OMR_THR_YIELD_ALG) */
+	{
+		if (millis || nanos) {
+			/*
+			* TIMED WAIT
+			*/
+			intptr_t boundedMillis = BOUNDED_I64_TO_IDATA(millis);
+#if defined(OMR_THR_YIELD_ALG)
+			ldiv_t sleptMillis = ldiv(sleptDuration, 1000);
+			int64_t sleptNanos = sleptMillis.rem * 1000;
+			if (sleptNanos > nanos) {
+				nanos = nanos + 1000000 - sleptNanos;
+				boundedMillis = boundedMillis - 1 - sleptMillis.quot;
+			} else {
+				nanos -= sleptNanos;
+				boundedMillis -= sleptMillis.quot;
 			}
-			break;
+#endif /* defined(OMR_THR_YIELD_ALG) */
+
+			OMROSCOND_WAIT_IF_TIMEDOUT(self->condition, monitor->mutex, boundedMillis, nanos) {
+				THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
+				intrFlags = self->flags & intrMask;
+				interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
+				priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
+				notified = self->flags & J9THREAD_FLAG_NOTIFIED;
+				if (!(interrupted || priorityinterrupted || notified)) {
+					timedOut = 1;
+					self->flags |= J9THREAD_FLAG_BLOCKED;
+				}
+				break;
+			} else {
+				THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
+				intrFlags = self->flags & intrMask;
+				interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
+				priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
+				notified = self->flags & J9THREAD_FLAG_NOTIFIED;
+				if (interrupted || priorityinterrupted || notified) {
+					break;
+				}
+				THREAD_UNLOCK(self);
+				ASSERT(0);
+			}
+			OMROSCOND_WAIT_TIMED_LOOP();
+
 		} else {
-			THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
-			intrFlags = self->flags & intrMask;
-			interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
-			priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
-			notified = self->flags & J9THREAD_FLAG_NOTIFIED;
-			if (interrupted || priorityinterrupted || notified) {
-				break;
-			}
-			THREAD_UNLOCK(self);
-			ASSERT(0);
+			/*
+			* WAIT UNTIL NOTIFIED, NO TIMEOUT
+			*/
+			OMROSCOND_WAIT(self->condition, monitor->mutex);
+				THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
+				intrFlags = self->flags & intrMask;
+				interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
+				priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
+				notified = self->flags & J9THREAD_FLAG_NOTIFIED;
+				if (interrupted || priorityinterrupted || notified) {
+					break;
+				}
+				THREAD_UNLOCK(self);
+				ASSERT(0);
+			OMROSCOND_WAIT_LOOP();
 		}
-		OMROSCOND_WAIT_TIMED_LOOP();
-
-	} else {
-		/*
-		 * WAIT UNTIL NOTIFIED, NO TIMEOUT
-		 */
-		OMROSCOND_WAIT(self->condition, monitor->mutex);
-			THREAD_LOCK(self, CALLER_MONITOR_WAIT2);
-			intrFlags = self->flags & intrMask;
-			interrupted = J9THR_WAIT_INTERRUPTED(intrFlags);
-			priorityinterrupted = J9THR_WAIT_PRI_INTERRUPTED(intrFlags);
-			notified = self->flags & J9THREAD_FLAG_NOTIFIED;
-			if (interrupted || priorityinterrupted || notified) {
-				break;
-			}
-			THREAD_UNLOCK(self);
-			ASSERT(0);
-		OMROSCOND_WAIT_LOOP();
 	}
 
 	/* DONE WAITING AT THIS POINT */
@@ -5515,7 +5609,7 @@ free_mcs_nodes(omrthread_library_t lib, omrthread_mcs_nodes_t mcsNodes)
  *
  * @return  non-0 if thread is target of notify, otherwise 0
  */
-static intptr_t
+intptr_t
 check_notified(omrthread_t self, omrthread_monitor_t monitor)
 {
 	intptr_t rc = 0;

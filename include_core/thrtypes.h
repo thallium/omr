@@ -159,6 +159,12 @@ typedef struct J9ThreadLibrary {
 	uintptr_t parkSleepCount;
 	uintptr_t cpuUtilCache;
 	uintptr_t parkSleepCpuUtilThreshold;
+	uintptr_t waitPolicy;
+	uintptr_t waitSleepMultiplier;
+	uintptr_t waitSleepTime;
+	uintptr_t waitSpinCount;
+	uintptr_t waitSleepCount;
+	uintptr_t waitSleepCpuUtilThreshold;
 #endif /* defined(OMR_THR_YIELD_ALG) */
 } J9ThreadLibrary;
 

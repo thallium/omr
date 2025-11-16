@@ -575,6 +575,93 @@ omrthread_park_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 	
 	return rc;
 }
+
+/**
+ * Helper function to be called by monitor_wait_original or monitor_wait_three_tier to spin or sleep
+ * the current thread before waiting on the condition variable.
+ *
+ * @param[in] self the current omrthread_t
+ * @param[in] millis millis argument of the calling monitor_wait
+ * @param[in] nanos nanos argument of the calling monitor_wait
+ * @param[in] intrMask interrupt mask for checking interruption
+ * @param[in] monitor the monitor that the thread is waiting on
+ * @param[out] sleptDuration the elapsed time of sleep when sleep count is exhausted or the thread
+ * is notified
+ *
+ * @return 0 if the thread hasn't been notified or timed out after spinning or sleeping
+ * J9THREAD_INTERRUPTED if the thread was interrupted while waiting<br>
+ * J9THREAD_PRIORITY_INTERRUPTED if the thread was priority interrupted or aborted while waiting<br>
+ * J9THREAD_TIMED_OUT if the timeout expired<br>
+ * J9THREAD_NOTIFIED if the thread has been notified. Note: this return value is only for internal
+ * use and should not be returned by the caller.
+ */
+intptr_t
+omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t intrMask, omrthread_monitor_t monitor, uintptr_t *sleptDuration)
+{
+	omrthread_library_t lib = self->library;
+	intptr_t rc = 0;
+	uintptr_t waitPolicy = lib->waitPolicy;
+
+	if (OMRTHREAD_WAIT_POLICY_NONE != waitPolicy) {
+		uintptr_t count = 0;
+		uintptr_t waitSleepTime = lib->waitSleepTime;
+		uintptr_t waitSleepMultiplier = lib->waitSleepMultiplier;
+		uintptr_t timeout = (millis * 1000) + (nanos / 1000);
+		intptr_t totalSleepTime = 0;
+
+		if (OMRTHREAD_WAIT_POLICY_SPIN == waitPolicy) {
+			/* For now, spin is only supported if no timeout is specified. */
+			if ((0 == millis) && (0 == nanos)) {
+				count = lib->waitSpinCount;
+			}
+		} else if (OMRTHREAD_WAIT_POLICY_SLEEP == waitPolicy) {
+			count = lib->waitSleepCount;
+		}
+
+		for (uintptr_t i = 0; i < count; i++) {
+			if (OMRTHREAD_WAIT_POLICY_SLEEP == waitPolicy) {
+				useconds_t sleepTime = OMR_MIN(((i * waitSleepMultiplier) + 1) * waitSleepTime, 999999);
+				totalSleepTime += sleepTime;
+				usleep(sleepTime);
+			} else if (OMRTHREAD_WAIT_POLICY_SPIN == waitPolicy) {
+				VM_AtomicSupport::yieldCPU();
+			}
+
+			if (timeout && (*sleptDuration >= timeout)) {
+				rc = J9THREAD_TIMED_OUT;
+				break;
+			}
+
+			uintptr_t intrFlags = self->flags & intrMask;
+			if (intrFlags & J9THREAD_FLAG_INTERRUPTED) {
+				self->flags &= ~J9THREAD_FLAG_INTERRUPTED;
+				rc = J9THREAD_INTERRUPTED;
+			}
+			if (intrFlags & J9THREAD_FLAG_PRIORITY_INTERRUPTED) {
+				self->flags &= ~J9THREAD_FLAG_PRIORITY_INTERRUPTED;
+				rc = J9THREAD_PRIORITY_INTERRUPTED;
+			}
+			if (intrFlags & J9THREAD_FLAG_ABORTED) {
+				/* don't clear the flag */
+				rc = J9THREAD_PRIORITY_INTERRUPTED;
+			}
+			if (check_notified(self, monitor)) {
+				rc = J9THREAD_NOTIFIED;
+			}
+
+			if (0 != rc) {
+				break;
+			}
+		}
+
+		if (NULL != sleptDuration) {
+			*sleptDuration = totalSleepTime;
+		}
+		Trc_THR_object_wait_sleep(millis, nanos, sleptDuration, rc);
+	}
+	
+	return rc;
+}
 #endif /* defined(OMR_THR_YIELD_ALG) */
 
 }

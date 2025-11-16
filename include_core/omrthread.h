@@ -116,6 +116,9 @@ or omrthread priority value.
 #define OMRTHREAD_PARK_POLICY_NONE 0
 #define OMRTHREAD_PARK_POLICY_SPIN 1
 #define OMRTHREAD_PARK_POLICY_SLEEP 2
+#define OMRTHREAD_WAIT_POLICY_NONE 0
+#define OMRTHREAD_WAIT_POLICY_SPIN 1
+#define OMRTHREAD_WAIT_POLICY_SLEEP 2
 #endif /* defined(OMR_THR_YIELD_ALG) */
 
 #include "thread_api.h"
