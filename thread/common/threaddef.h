@@ -98,7 +98,9 @@ intptr_t omrthread_spinlock_acquire(omrthread_t self, omrthread_monitor_t monito
 intptr_t omrthread_spinlock_acquire_no_spin(omrthread_t self, omrthread_monitor_t monitor);
 uintptr_t omrthread_spinlock_swapState(omrthread_monitor_t monitor, uintptr_t newState);
 intptr_t omrthread_park_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t *sleepedDuration);
+intptr_t omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t intrMask, omrthread_monitor_t monitor, uintptr_t *sleptDuration);
 intptr_t omrthread_park_check_flags(omrthread_t thread);
+intptr_t check_notified(omrthread_t self, omrthread_monitor_t monitor);
 
 #if defined(OMR_THR_MCS_LOCKS)
 intptr_t
