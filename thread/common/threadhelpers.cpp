@@ -665,7 +665,6 @@ omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 		if (NULL != sleptDuration) {
 			*sleptDuration = totalSleepTime;
 		}
-		Trc_THR_object_wait_sleep(millis, nanos, sleptDuration, rc);
 	}
 	
 	return rc;
