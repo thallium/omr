@@ -192,6 +192,19 @@ omrthread_t global_lock_owner = UNOWNED;
  * Thread Library
  */
 
+static const clockid_t OMRTIME_NANO_CLOCK = CLOCK_MONOTONIC;
+#define OMRPORT_TIME_DELTA_IN_NANOSECONDS ((uint64_t) 1000000000)
+static int64_t nano_time() {
+	int64_t hiresTime = 0;
+	struct timespec ts;
+
+	if (0 == clock_gettime(OMRTIME_NANO_CLOCK, &ts)) {
+		hiresTime = ((int64_t)ts.tv_sec * OMRPORT_TIME_DELTA_IN_NANOSECONDS) + (int64_t)ts.tv_nsec;
+	}
+
+	return hiresTime;
+}
+
 #if !defined(OMR_OS_WINDOWS)
 
 /**
@@ -4636,6 +4649,8 @@ monitor_wait_original(omrthread_t self, omrthread_monitor_t monitor,
 #if defined(OMR_THR_YIELD_ALG)
 	uintptr_t sleptDuration = 0;
 	intptr_t spinRC = 0;
+	int64_t startTime = nano_time();
+	int64_t notifiedTime = 0;
 #endif /* defined(OMR_THR_YIELD_ALG) */
 
 	ASSERT(monitor);
@@ -4813,6 +4828,7 @@ monitor_wait_original(omrthread_t self, omrthread_monitor_t monitor,
 			OMROSCOND_WAIT_LOOP();
 		}
 	}
+	notifiedTime = nano_time();
 
 	/* DONE WAITING AT THIS POINT */
 
@@ -4900,7 +4916,7 @@ monitor_wait_original(omrthread_t self, omrthread_monitor_t monitor,
 	ASSERT(!(monitor->flags & J9THREAD_FLAG_NOTIFIED));
 	ASSERT(!(monitor->flags & J9THREAD_FLAG_INTERRUPTABLE));
 	ASSERT(NULL == self->next);
-
+	Trc_THR_object_wait_sleep(startTime, notifiedTime, nano_time(), millis, nanos, spinRC);
 	if (priorityinterrupted) {
 		return J9THREAD_PRIORITY_INTERRUPTED;
 	}
