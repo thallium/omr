@@ -193,6 +193,20 @@ omrthread_t global_lock_owner = UNOWNED;
  * Thread Library
  */
 
+static const clockid_t OMRTIME_NANO_CLOCK = CLOCK_MONOTONIC;
+#define OMRPORT_TIME_DELTA_IN_NANOSECONDS ((uint64_t) 1000000000)
+static int64_t nano_time() {
+	int64_t hiresTime = 0;
+	struct timespec ts;
+
+	if (0 == clock_gettime(OMRTIME_NANO_CLOCK, &ts)) {
+		hiresTime = ((int64_t)ts.tv_sec * OMRPORT_TIME_DELTA_IN_NANOSECONDS) + (int64_t)ts.tv_nsec;
+	}
+
+	return hiresTime;
+}
+
+
 #if !defined(OMR_OS_WINDOWS)
 
 /**
@@ -3270,9 +3284,11 @@ omrthread_park(int64_t millis, intptr_t nanos)
 {
 	intptr_t rc = 0;
 	omrthread_t self = MACRO_SELF();
+	intptr_t spinRC = 0;
 #if defined(OMR_THR_YIELD_ALG)
 	omrthread_library_t threadLibrary = self->library;
 	uintptr_t sleptDuration = 0;
+	int64_t startTime = nano_time();
 #endif /* defined(OMR_THR_YIELD_ALG) */
 	ASSERT(self);
 
@@ -3284,6 +3300,7 @@ omrthread_park(int64_t millis, intptr_t nanos)
 
 	THREAD_LOCK(self, CALLER_PARK);
 	rc = omrthread_park_check_flags(self);
+	spinRC = rc;
 
 	if (J9THREAD_UNPARKED == rc) {
 		self->flags &= ~J9THREAD_FLAG_UNPARKED;
@@ -3332,6 +3349,7 @@ omrthread_park(int64_t millis, intptr_t nanos)
 	self->flags &= ~(J9THREAD_FLAGM_PARKED_INTERRUPTIBLE | J9THREAD_FLAG_TIMER_SET);
 
 	THREAD_UNLOCK(self);
+	Trc_THR_object_park_sleep(startTime, nano_time(), millis, nanos, threadLibrary->cpuUtilCache, spinRC);
 
 	return rc;
 }
