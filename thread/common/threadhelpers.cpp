@@ -618,6 +618,7 @@ omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 			count = lib->waitSleepCount;
 		}
 
+		MONITOR_UNLOCK(monitor);
 		for (uintptr_t i = 0; i < count; i++) {
 			if (OMRTHREAD_WAIT_POLICY_SLEEP == waitPolicy) {
 				useconds_t sleepTime = OMR_MIN(((i * waitSleepMultiplier) + 1) * waitSleepTime, 999999);
@@ -653,6 +654,7 @@ omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 				break;
 			}
 		}
+		MONITOR_LOCK(monitor, CALLER_NOTIFY_ONE_OR_ALL);
 
 		if (NULL != sleptDuration) {
 			*sleptDuration = totalSleepTime;
