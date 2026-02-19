@@ -538,7 +538,7 @@ omrthread_park_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 		uintptr_t parkSleepTime = lib->parkSleepTime;
 		uintptr_t parkSleepMultiplier = lib->parkSleepMultiplier;
 		uintptr_t timeout = (millis * 1000) + (nanos / 1000);
-		intptr_t totalSleepTime = 0;
+		uintptr_t totalSleepTime = 0;
 
 		if (OMRTHREAD_PARK_POLICY_SPIN == parkPolicy) {
 			/* For now, spin is only supported if no timeout is specified. */
@@ -562,7 +562,7 @@ omrthread_park_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 				VM_AtomicSupport::yieldCPU();
 			}
 
-			if (timeout && (*sleptDuration >= timeout)) {
+			if (timeout && (totalSleepTime >= timeout)) {
 				rc = J9THREAD_TIMED_OUT;
 				break;
 			}
@@ -607,7 +607,7 @@ omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 		uintptr_t waitSleepTime = lib->waitSleepTime;
 		uintptr_t waitSleepMultiplier = lib->waitSleepMultiplier;
 		uintptr_t timeout = (millis * 1000) + (nanos / 1000);
-		intptr_t totalSleepTime = 0;
+		uintptr_t totalSleepTime = 0;
 
 		if (OMRTHREAD_WAIT_POLICY_SPIN == waitPolicy) {
 			/* For now, spin is only supported if no timeout is specified. */
@@ -628,7 +628,7 @@ omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 				VM_AtomicSupport::yieldCPU();
 			}
 
-			if (timeout && (*sleptDuration >= timeout)) {
+			if (timeout && (totalSleepTime  >= timeout)) {
 				rc = J9THREAD_TIMED_OUT;
 				break;
 			}
