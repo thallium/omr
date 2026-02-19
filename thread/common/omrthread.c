@@ -4674,6 +4674,7 @@ monitor_wait_original(omrthread_t self, omrthread_monitor_t monitor,
 	intptr_t spinRC = 0;
 	int64_t startTime = nano_time();
 	int64_t notifiedTime = 0;
+	omrthread_library_t threadLibrary = self->library;
 #endif /* defined(OMR_THR_YIELD_ALG) */
 
 	ASSERT(monitor);
@@ -4939,7 +4940,7 @@ monitor_wait_original(omrthread_t self, omrthread_monitor_t monitor,
 	ASSERT(!(monitor->flags & J9THREAD_FLAG_NOTIFIED));
 	ASSERT(!(monitor->flags & J9THREAD_FLAG_INTERRUPTABLE));
 	ASSERT(NULL == self->next);
-	Trc_THR_object_wait_sleep(startTime, notifiedTime, nano_time(), millis, nanos, spinRC);
+	Trc_THR_object_wait_sleep(startTime, notifiedTime, nano_time(), millis, nanos, spinRC, threadLibrary->cpuUtilCache);
 	if (priorityinterrupted) {
 		return J9THREAD_PRIORITY_INTERRUPTED;
 	}
