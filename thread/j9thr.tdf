@@ -75,3 +75,4 @@ TraceException=Trc_THR_fixupThreadAccounting_omrthread_get_cpu_time_ex_error Ove
 TraceEvent=Trc_THR_EnableRawMonitorSpin_CustomSpinOption Overhead=1 Level=3 NoEnv Test Template="(ENABLE_RAW_MONITOR_SPIN) Using custom spin counts: %s, monitor: %p, threeTierSpinCount1: %zu, threeTierSpinCount2: %zu, threeTierSpinCount3: %zu, adaptSpin: %zu"
 
 TraceEvent=Trc_THR_object_wait_sleep Overhead=1 Level=3 NoEnv Test Template="startTime=%lld notifyTime=%lld returnTime=%lld millis=%lld nanos=%zu rc=%zu"
+TraceEvent=Trc_THR_object_park_sleep Overhead=1 Level=3 NoEnv Test Template="parkSleep startTime=%lld returnTime=%lld millis=%lld nanos=%zu cpuUtil=%zu rc=%zu"

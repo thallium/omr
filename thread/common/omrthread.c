@@ -3319,9 +3319,12 @@ omrthread_park(int64_t millis, intptr_t nanos)
 {
 	intptr_t rc = 0;
 	omrthread_t self = MACRO_SELF();
+	intptr_t spinRC = 0;
 #if defined(OMR_THR_YIELD_ALG)
 	omrthread_library_t threadLibrary = self->library;
 	uintptr_t sleptDuration = 0;
+	int64_t startTime = nano_time();
+
 #endif /* defined(OMR_THR_YIELD_ALG) */
 	ASSERT(self);
 
@@ -3333,6 +3336,7 @@ omrthread_park(int64_t millis, intptr_t nanos)
 
 	THREAD_LOCK(self, CALLER_PARK);
 	rc = omrthread_park_check_flags(self);
+	spinRC = rc;
 
 	if (J9THREAD_UNPARKED == rc) {
 		self->flags &= ~J9THREAD_FLAG_UNPARKED;
@@ -3381,6 +3385,7 @@ omrthread_park(int64_t millis, intptr_t nanos)
 	self->flags &= ~(J9THREAD_FLAGM_PARKED_INTERRUPTIBLE | J9THREAD_FLAG_TIMER_SET);
 
 	THREAD_UNLOCK(self);
+	Trc_THR_object_park_sleep(startTime, nano_time(), millis, nanos, threadLibrary->cpuUtilCache, spinRC);
 
 	return rc;
 }
