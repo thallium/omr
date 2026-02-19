@@ -603,6 +603,7 @@ omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 	uintptr_t waitPolicy = lib->waitPolicy;
 
 	if (OMRTHREAD_WAIT_POLICY_NONE != waitPolicy) {
+		MONITOR_UNLOCK(monitor);
 		uintptr_t count = 0;
 		uintptr_t waitSleepTime = lib->waitSleepTime;
 		uintptr_t waitSleepMultiplier = lib->waitSleepMultiplier;
@@ -618,21 +619,7 @@ omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 			count = lib->waitSleepCount;
 		}
 
-		MONITOR_UNLOCK(monitor);
 		for (uintptr_t i = 0; i < count; i++) {
-			if (OMRTHREAD_WAIT_POLICY_SLEEP == waitPolicy) {
-				useconds_t sleepTime = OMR_MIN(((i * waitSleepMultiplier) + 1) * waitSleepTime, 999999);
-				totalSleepTime += sleepTime;
-				usleep(sleepTime);
-			} else if (OMRTHREAD_WAIT_POLICY_SPIN == waitPolicy) {
-				VM_AtomicSupport::yieldCPU();
-			}
-
-			if (timeout && (totalSleepTime  >= timeout)) {
-				rc = J9THREAD_TIMED_OUT;
-				break;
-			}
-
 			uintptr_t intrFlags = self->flags & intrMask;
 			if (intrFlags & J9THREAD_FLAG_INTERRUPTED) {
 				self->flags &= ~J9THREAD_FLAG_INTERRUPTED;
@@ -653,8 +640,38 @@ omrthread_wait_spin(omrthread_t self, int64_t millis, intptr_t nanos, uintptr_t 
 			if (0 != rc) {
 				break;
 			}
+
+			if (OMRTHREAD_WAIT_POLICY_SLEEP == waitPolicy) {
+				useconds_t sleepTime = OMR_MIN(((i * waitSleepMultiplier) + 1) * waitSleepTime, 999999);
+				totalSleepTime += sleepTime;
+				usleep(sleepTime);
+			} else if (OMRTHREAD_WAIT_POLICY_SPIN == waitPolicy) {
+				VM_AtomicSupport::yieldCPU();
+			}
+
+			if (timeout && (totalSleepTime >= timeout)) {
+				rc = J9THREAD_TIMED_OUT;
+				break;
+			}
 		}
 		MONITOR_LOCK(monitor, CALLER_NOTIFY_ONE_OR_ALL);
+
+		uintptr_t intrFlags = self->flags & intrMask;
+		if (intrFlags & J9THREAD_FLAG_INTERRUPTED) {
+			self->flags &= ~J9THREAD_FLAG_INTERRUPTED;
+			rc = J9THREAD_INTERRUPTED;
+		}
+		if (intrFlags & J9THREAD_FLAG_PRIORITY_INTERRUPTED) {
+			self->flags &= ~J9THREAD_FLAG_PRIORITY_INTERRUPTED;
+			rc = J9THREAD_PRIORITY_INTERRUPTED;
+		}
+		if (intrFlags & J9THREAD_FLAG_ABORTED) {
+			/* don't clear the flag */
+			rc = J9THREAD_PRIORITY_INTERRUPTED;
+		}
+		if (check_notified(self, monitor)) {
+			rc = J9THREAD_NOTIFIED;
+		}
 
 		if (NULL != sleptDuration) {
 			*sleptDuration = totalSleepTime;
