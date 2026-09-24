@@ -206,7 +206,7 @@ typedef struct J9ThreadMonitorTracing {
     uintptr_t count; \
     struct J9Thread * volatile owner; \
     struct J9Thread* waiting; \
-    uintptr_t flags; \
+    volatile uintptr_t flags; \
     uintptr_t userData;
 
 #if defined(OMR_THR_JLM)
